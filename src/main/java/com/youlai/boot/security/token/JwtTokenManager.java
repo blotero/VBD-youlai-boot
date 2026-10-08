@@ -143,7 +143,13 @@ public class JwtTokenManager implements TokenManager {
      */
     @Override
     public boolean validateToken(String token) {
-        return validateToken(token, false);
+        JWT jwt = JWTUtil.parseToken(token);
+
+        if (!isAlgorithmAllowed(jwt)) {
+            return false;
+        }
+        // 检查 Token 是否有效(验签 + 是否过期)
+        return jwt.setKey(secretKey).validate(0);
     }
 
     /**
