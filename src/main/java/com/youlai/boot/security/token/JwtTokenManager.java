@@ -97,7 +97,7 @@ public class JwtTokenManager implements TokenManager {
         if (!isAlgorithmAllowed(jwt)) {
             throw new BusinessException(ResultCode.ACCESS_TOKEN_INVALID);
         }
-        if (!jwt.setKey(secretKey).verify()) {
+        if (!jwt.setKey(secretKey).validate(0)) {
             throw new BusinessException(ResultCode.ACCESS_TOKEN_INVALID);
         }
 
