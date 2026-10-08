@@ -49,12 +49,15 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                 // 剥离Bearer前缀获取原始令牌
                 String rawToken = authorizationHeader.substring(SecurityConstants.BEARER_TOKEN_PREFIX.length());
 
-                // 将令牌解析为 Spring Security 上下文认证对象
-                Authentication authentication = tokenManager.parseToken(rawToken);
-                if (authentication == null) {
+                // 执行令牌有效性检查（包含密码学验签和过期时间验证）
+                boolean isValidToken = tokenManager.validateToken(rawToken);
+                if (!isValidToken) {
                     WebResponseWriter.writeError(response, ResultCode.ACCESS_TOKEN_INVALID);
                     return;
                 }
+
+                // 将令牌解析为 Spring Security 上下文认证对象
+                Authentication authentication = tokenManager.parseToken(rawToken);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         } catch (Exception ex) {
