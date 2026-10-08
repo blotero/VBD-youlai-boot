@@ -175,48 +175,37 @@ public class JwtTokenManager implements TokenManager {
     private boolean validateToken(String token, boolean validateRefreshToken) {
         JWT jwt = JWTUtil.parseToken(token);
 
-        if (!isAlgorithmAllowed(jwt)) {
+        // 检查算法、签名与过期时间
+        if (!isAlgorithmAllowed(jwt) || !jwt.setKey(secretKey).validate(0)) {
             return false;
         }
 
-        // 检查 Token 是否有效(验签 + 是否过期)
-        boolean isValid = jwt.setKey(secretKey).validate(0);
+        JSONObject payloads = jwt.getPayloads();
+        // 刷新令牌需要校验令牌类别
+        if (validateRefreshToken && !Boolean.TRUE.equals(payloads.getBool(JwtClaimConstants.TOKEN_TYPE))) {
+            return false;
+        }
+        return isSessionActive(payloads);
+    }
 
-        if (isValid) {
-            JSONObject payloads = jwt.getPayloads();
-            // 1. 校验刷新令牌类型（仅在校验刷新令牌场景启用）
-            String jti = payloads.getStr(JWTPayload.JWT_ID);
-            if (validateRefreshToken) {
-                //刷新token需要校验token类别
-                boolean isRefreshToken = payloads.getBool(JwtClaimConstants.TOKEN_TYPE);
-                if (!isRefreshToken) {
-                    return false;
-                }
-            }
-            // 2. 校验 tokenVersion（用于按用户维度失效历史 Token）
-            //    场景示例：用户修改密码、被管理员强制下线、手动"踢所有端"后，递增 tokenVersion，
-            //    之前签发的 Token 因版本号不匹配而失效
-            Long userId = payloads.getLong(JwtClaimConstants.USER_ID);
-            if (userId != null) {
-                Integer tokenVersion = payloads.getInt(JwtClaimConstants.TOKEN_VERSION);
-                
-                String versionKey = StrUtil.format(RedisConstants.Auth.USER_TOKEN_VERSION, userId);
-                Object currentVersionObj = redisTemplate.opsForValue().get(versionKey);
-                int currentVersion = currentVersionObj != null ? Convert.toInt(currentVersionObj) : 0;
-
-                // 版本号不匹配则 Token 无效（新签发的 Token 版本号必须 >= Redis 中的版本号）
-                if (tokenVersion == null || tokenVersion < currentVersion) {
-                    return false;
-                }
-            }
-
-            // 3. 判断 Token 是否已被撤销（单端退出/会话注销）
-            //    场景示例：单点退出登录、后台手动注销某个会话、封禁账号后立即阻断当前 Token 等
-            if (isTokenRevoked(jti)) {
+    /**
+     * 校验令牌所属会话是否仍然有效（tokenVersion + jti 黑名单）
+     *
+     * @param payloads JWT 载荷
+     * @return 是否有效
+     */
+    private boolean isSessionActive(JSONObject payloads) {
+        Long userId = payloads.getLong(JwtClaimConstants.USER_ID);
+        if (userId != null) {
+            Integer tokenVersion = payloads.getInt(JwtClaimConstants.TOKEN_VERSION);
+            String versionKey = StrUtil.format(RedisConstants.Auth.USER_TOKEN_VERSION, userId);
+            Object currentVersionObj = redisTemplate.opsForValue().get(versionKey);
+            int currentVersion = currentVersionObj != null ? Convert.toInt(currentVersionObj) : 0;
+            if (tokenVersion == null || tokenVersion < currentVersion) {
                 return false;
             }
         }
-        return isValid;
+        return !isTokenRevoked(payloads.getStr(JWTPayload.JWT_ID));
     }
 
     /**
