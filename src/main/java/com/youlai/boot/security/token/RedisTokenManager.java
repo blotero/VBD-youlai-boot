@@ -44,6 +44,8 @@ import java.util.stream.Collectors;
 @Service
 public class RedisTokenManager implements TokenManager {
 
+    private static final int TOKEN_LENGTH = 32;
+
     private final SecurityProperties securityProperties;
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -122,7 +124,12 @@ public class RedisTokenManager implements TokenManager {
      */
     @Override
     public boolean validateToken(String token) {
-        return redisTemplate.hasKey(formatTokenKey(token));
+        if (StrUtil.isBlank(token)) {
+            return false;
+        }
+        String cleanToken = cleanBearerPrefix(token);
+        return cleanToken.length() == TOKEN_LENGTH
+                && cleanToken.chars().allMatch(ch -> Character.digit(ch, 16) >= 0);
     }
 
     /**
